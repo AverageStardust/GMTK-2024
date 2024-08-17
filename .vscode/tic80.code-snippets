@@ -102,7 +102,7 @@
 		"scope": "javascript",
 		"prefix": "btnp",
 		"body": [
-			"btnp(${1:id})"
+			"btnp(${1:id}, ${2:hold}, ${3:period})"
 		],
 		"description": "Get gamepad button state according to previous frame TIC-80"
 	},
@@ -189,7 +189,7 @@
 		"scope": "javascript",
 		"prefix": "music",
 		"body": [
-			"music(${1:id})",
+			"music(${1:id}, ${2:frame}, ${3:row}, ${4:loop}, ${5:sustain}, ${6:tempo}, ${7:speed})",
 			"$0"
 		],
 		"description": "Play music track by ID TIC-80"
@@ -286,7 +286,7 @@
 		"scope": "javascript",
 		"prefix": "mouse",
 		"body": [
-			"${1:mx},${2:my},${3:mp}=mouse()",
+			"let [${1:x},${2:y},${3:left},${4:middle},${5:right},${6:scrollX},${7:scrollY}] = mouse()",
 			"$0"
 		],
 		"description": "Get XY and press state of mouse/touch TIC-80"
