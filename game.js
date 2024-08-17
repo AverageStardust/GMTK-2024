@@ -8,7 +8,7 @@
 
 function TIC() {
 	cls(13)
-	print("HELLO WORLD!",84,84)
+	print("HELLO WORLD!", 84, 84)
 }
 
 // <WAVES>
