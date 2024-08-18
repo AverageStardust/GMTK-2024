@@ -1,8 +1,8 @@
 // title:   GMTK 2024
 // authors: Blessed BlessedEgg, Comet1772, lemgob, Wren
 // desc:    
-// site:    
-// license: MIT License
+// site:    https://github.com/AverageStardust/GMTK-2024
+// license: 
 // version: 0.1
 // script:  js
 

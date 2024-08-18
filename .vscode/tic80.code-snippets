@@ -1,7 +1,6 @@
 {
 	"TIC-80 print": {
 		"scope": "javascript",
-		"scope": "javascript",
 		"prefix": "print",
 		"body": [
 			"print(\"${1:text}\"${2:,${3:x},${4:y},${5:color}${6:,${7:fixed},${8:scale}}})",
@@ -350,19 +349,4 @@
 		],
 		"description": "Init function TIC-80"
 	},
-	// Cartridge metadata
-	"TIC-80 cartridge metadata": {
-		"scope": "javascript",
-		"prefix": "ticmeta",
-		"body": [
-			"-- title:  ${1:game title}",
-			"-- author: ${2:game developer}",
-			"-- desc:   ${3:short description}",
-			"-- script: ${4:lua}",
-			"${5:-- pal:    ${6:DB16}}",
-			"${7:-- input: mouse}",
-			"$0"
-		],
-		"description": "Cartridge metadata TIC-80"
-	}
 }
