@@ -8,10 +8,12 @@
 
 let player;
 let frame = 0;
+let cameraPosition;
 
 function BOOT() {
 	player = new Player();
-	player.setPosition(new Vector2(15, 15));
+	player.setPosition(new Vector2(55, 50));
+	cameraPosition = Vector2.zero();
 }
 
 function TIC() {
@@ -19,7 +21,9 @@ function TIC() {
 	player.update();
 
 	// DRAW
-	map(0, 0, 30, 17, 0, 0, -1);
+	const { x, y } = cameraPosition.sub(new Vector2(120, 68));
+	cls(12)
+	map(x >> 3, y >> 3, 31, 18, -(x % 8), -(y % 8), -1);
 	player.draw();
 
 	frame++;
@@ -40,7 +44,12 @@ class Player {
 	update() {
 		const targetDisplayPosition = this.position.mul(8);
 		this.displayPosition = this.displayPosition.moveTo(targetDisplayPosition, 1);
+		cameraPosition = this.displayPosition.add(new Vector2(8, 8));
 		this.control();
+	}
+
+	draw() {
+		rect(113, 61, 14, 14, 12);
 	}
 
 	control() {
@@ -57,7 +66,7 @@ class Player {
 	}
 
 	moveUpLeft() {
-		if (this.getNeighbourFlag(0, -1, 0)) {
+		if (this.getNeighbourFlag(0, -1, 0) || this.getNeighbourFlag(1, -1, 0)) {
 			this.moveLeft();
 			this.moveUp();
 		} else {
@@ -67,7 +76,7 @@ class Player {
 	}
 
 	moveDownRight() {
-		if (this.getNeighbourFlag(0, 1, 0)) {
+		if (this.getNeighbourFlag(0, 2, 0) || this.getNeighbourFlag(1, 2, 0)) {
 			this.moveRight();
 			this.moveDown();
 		} else {
@@ -77,7 +86,7 @@ class Player {
 	}
 
 	moveLeftDown() {
-		if (this.getNeighbourFlag(-1, 0, 0)) {
+		if (this.getNeighbourFlag(-1, 0, 0) || this.getNeighbourFlag(-1, 1, 0)) {
 			this.moveDown();
 			this.moveLeft();
 		} else {
@@ -87,7 +96,7 @@ class Player {
 	}
 
 	moveRightUp() {
-		if (this.getNeighbourFlag(1, 0, 0)) {
+		if (this.getNeighbourFlag(2, 0, 0) || this.getNeighbourFlag(2, 1, 0)) {
 			this.moveUp();
 			this.moveRight();
 		} else {
@@ -97,25 +106,25 @@ class Player {
 	}
 
 	moveUp() {
-		if (this.getNeighbourFlag(0, -1, 0)) return;
+		if (this.getNeighbourFlag(0, -1, 0) || this.getNeighbourFlag(1, -1, 0)) return;
 		this.position.y--;
 		this.lastMovedFrame = frame;
 	}
 
 	moveDown() {
-		if (this.getNeighbourFlag(0, 1, 0)) return;
+		if (this.getNeighbourFlag(0, 2, 0) || this.getNeighbourFlag(1, 2, 0)) return;
 		this.position.y++;
 		this.lastMovedFrame = frame;
 	}
 
 	moveLeft() {
-		if (this.getNeighbourFlag(-1, 0, 0)) return;
+		if (this.getNeighbourFlag(-1, 0, 0) || this.getNeighbourFlag(-1, 1, 0)) return;
 		this.position.x--;
 		this.lastMovedFrame = frame;
 	}
 
 	moveRight() {
-		if (this.getNeighbourFlag(1, 0, 0)) return;
+		if (this.getNeighbourFlag(2, 0, 0) || this.getNeighbourFlag(2, 1, 0)) return;
 		this.position.x++;
 		this.lastMovedFrame = frame;
 	}
@@ -123,11 +132,6 @@ class Player {
 	getNeighbourFlag(offsetX, offsetY, flag) {
 		let { x, y } = this.position.add(new Vector2(offsetX, offsetY));
 		return fget(mget(x, y), flag);
-	}
-
-	draw() {
-		let { x, y } = this.displayPosition;
-		rect(x, y, 8, 8, 12);
 	}
 }
 
@@ -512,7 +516,7 @@ function moveTo(start, end, step) {
 // </TRACKS>
 
 // <FLAGS>
-// 000:00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000010
+// 000:00000000000000000000000000000000000000000000101010101010101010100000000000001010101010101010101000000000000010101010101010101010000000000000101010101010101010100000000000001010101010101010101000000000000000000000000000000000000000000000101010101010101000000000000000001010101010101010000000000000000010101010101010100000000000000000101010101010101000000000000000001010101010101010000000000000000000000000000000000000000000000000000000000000000000001010000000000000000000000000101010100000000000000000000000001010
 // </FLAGS>
 
 // <PALETTE>
