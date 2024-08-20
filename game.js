@@ -6,16 +6,22 @@
 // version: 0.1
 // script:  js
 
+let MOUNTAIN_SPAWN = [20, 22];
+let GYM_SPAWN = [194, 8];
+
 let player;
 let frame = 0;
+let mode;
+let exercisePhase = false;
 let cameraPosition;
 
 // 240, 136
 
 function BOOT() {
 	player = new Player();
-	player.setPosition(new Vector2(20, 22));
+	teleportMountain();
 	cameraPosition = Vector2.zero();
+	music(0, 0, 0, true);
 }
 
 function TIC() {
@@ -23,15 +29,19 @@ function TIC() {
 	player.update();
 
 	// DRAW
-	const { x, y } = cameraPosition.sub(new Vector2(120, 68));
-	cls(12)
+	const { x, y } = getCameraPosition();
 	map(x >> 3, y >> 3, 31, 18, -mod(x, 8), -mod(y, 8), -1);
 	drawSunset(128, -48, Math.sin(time() * 0.0015) * 3);
-	drawFlag(148, -24);
-	player.draw();
+	if (player.displayPosition.y > -28) {
+		drawFlag(148, -24);
+		player.draw();
+	} else {
+		player.draw();
+		drawFlag(148, -24);
+	}
 
-	print("Energy", 203, 106, 0);
-	print("Energy", 202, 105, 12);
+	print("Strength", 191, 106, 0);
+	print("Strength", 190, 105, 12);
 	drawBar(Math.ceil(player.energy), 240, 111, 370, 5);
 	print("Motivation", 185, 122, 0);
 	print("Motivation", 184, 121, 12);
@@ -41,13 +51,13 @@ function TIC() {
 }
 
 function drawSunset(u, v, shimmer) {
-	const { x, y } = cameraPosition.sub(new Vector2(120, 68));
+	const { x, y } = getCameraPosition();
 	circ(u - x + 64, v - y - 4, 16, 4);
 	spr(384, u - x + shimmer, v - y, 15, 1, false, 0, 16, 2);
 }
 
 function drawFlag(u, v) {
-	const { x, y } = cameraPosition.sub(new Vector2(120, 68));
+	const { x, y } = getCameraPosition();
 	spr(362, u - x, v - y, 15, 1, false, 0, 2, 2);
 }
 
@@ -63,7 +73,8 @@ class Player {
 		this.lastMovedFrame = -Infinity;
 		this.moveDelay = 8;
 		this.moveDirection = 1;
-		this.energy = 10;
+		this.strength = 2.5;
+		this.energy = this.strength;
 		this.motivation = 0;
 	}
 
@@ -82,9 +93,20 @@ class Player {
 	draw() {
 		let id = 256;
 		let flip = false;
-		let movePhase = time() % 500 < 250;
+		let drawArrow = false;
+		let arrowRotation = 0;
 
-		if (this.isMoving()) {
+		if (mode === "pullup") {
+			id = exercisePhase ? 322 : 320;
+			drawArrow = true;
+			arrowRotation = exercisePhase ? 2 : 0;
+		} else if (mode === "tredmill") {
+			id = 292;
+			flip = exercisePhase;
+			drawArrow = true;
+			arrowRotation = exercisePhase ? 1 : 3;
+		} else if (this.isMoving()) {
+			let movePhase = time() % 500 < 250;
 			switch (this.moveDirection) {
 				case 0:
 					id = 258;
@@ -104,27 +126,95 @@ class Player {
 			}
 		}
 
-		spr(id, 113, 61, 15, 1, flip, 0, 2, 2);
+		const { x, y } = getCameraPosition();
+		const { x: u, y: v } = this.displayPosition;
+		spr(id, u - x, v - y, 15, 1, flip, 0, 2, 2);
+
+		if (drawArrow) {
+			spr(352, u - x, v - y + 24, 15, 1, false, arrowRotation, 2, 2);
+		}
 	}
 
 	control() {
-		if (!this.isMoving()) {
-			if (btn(0) && btn(2)) this.moveUpLeft();
-			else if (btn(1) && btn(3)) this.moveDownRight();
-			else if (btn(2) && btn(1)) this.moveLeftDown();
-			else if (btn(3) && btn(0)) this.moveRightUp();
-			else if (btn(0)) this.moveUp();
-			else if (btn(1)) this.moveDown();
-			else if (btn(2)) this.moveLeft();
-			else if (btn(3)) this.moveRight();
-
-			if (this.isMoving()) {
-				const energyCost = Math.max(
-					this.getNeighbourEnergyCost(0, 1),
-					this.getNeighbourEnergyCost(1, 1));
-
-				this.energy -= energyCost * 0.1;
+		if (mode === "pullup") {
+			if (!this.isMoving()) {
+				if ((btn(2) || btn(3))) {
+					this.moveDown();
+					this.moveDown();
+					enterGym();
+				}
+				if (btn(exercisePhase ? 1 : 0) && !btn(exercisePhase ? 0 : 1)) {
+					exercisePhase = !exercisePhase;
+					this.addStength(0.05);
+				}
 			}
+			return;
+		} else if (mode === "tredmill") {
+			if (!this.isMoving()) {
+				if ((btn(0) || btn(1))) {
+					this.moveLeft();
+					this.moveLeft();
+					enterGym();
+				}
+				if (btn(exercisePhase ? 3 : 2) && !btn(exercisePhase ? 2 : 3)) {
+					exercisePhase = !exercisePhase;
+					this.addStength(0.05);
+				}
+			}
+			return;
+		}
+
+		if (this.isMoving()) {
+			if (mode === "gym") {
+				if (this.getNeighbourFlag(0, -1, 6) && this.getNeighbourFlag(1, -1, 6)) {
+					this.moveUp();
+					enterPullup();
+				}
+				if (this.getNeighbourFlag(0, 0, 7) || this.getNeighbourFlag(1, 0, 7)) {
+					if (this.getNeighbourFlag(0, -1, 7) || this.getNeighbourFlag(1, -1, 7)) {
+						this.moveUp();
+					}
+					if (this.getNeighbourFlag(-1, 0, 7)) {
+						this.moveLeft();
+					} else if (this.getNeighbourFlag(2, 0, 7)) {
+						this.moveRight();
+					}
+					enterTredmill();
+				}
+			}
+			return;
+		}
+
+		if (btn(0) && btn(2)) this.moveUpLeft();
+		else if (btn(1) && btn(3)) this.moveDownRight();
+		else if (btn(2) && btn(1)) this.moveLeftDown();
+		else if (btn(3) && btn(0)) this.moveRightUp();
+		else if (btn(0)) this.moveUp();
+		else if (btn(1)) this.moveDown();
+		else if (btn(2)) this.moveLeft();
+		else if (btn(3)) this.moveRight();
+
+		if (this.isMoving()) {
+			const energyCost = Math.max(
+				this.getNeighbourEnergyCost(0, 1),
+				this.getNeighbourEnergyCost(1, 1));
+
+			this.energy -= energyCost * 0.1;
+			if (btn(0) && !btn(1)) {
+				this.motivation += energyCost * (1 - this.position.y / 160) * 0.1;
+			}
+			if (this.energy < 0.0) {
+				teleportGym();
+			}
+		}
+	}
+
+	addStength(amount) {
+		this.strength += amount;
+		this.energy = this.strength;
+		this.motivation -= amount;
+		if (this.motivation < 0) {
+			teleportMountain();
 		}
 	}
 
@@ -210,6 +300,42 @@ class Player {
 		let { x, y } = this.position.add(new Vector2(offsetX, offsetY));
 		return fget(mget(mod(x, 240), mod(y, 136)), flag);
 	}
+}
+
+function getCameraPosition() {
+	let vector = cameraPosition.sub(new Vector2(120, 68));
+
+	if (mode !== "climb") {
+		vector = new Vector2(1440, 0);
+	}
+
+	return vector;
+}
+
+function teleportMountain() {
+	player.setPosition(new Vector2(...MOUNTAIN_SPAWN));
+	player.motivation = -0.5;
+	mode = "climb";
+}
+
+function teleportGym() {
+	player.setPosition(new Vector2(...GYM_SPAWN));
+	player.energy = player.strength;
+	enterGym();
+}
+
+function enterPullup() {
+	mode = "pullup";
+	exercisePhase = false;
+}
+
+function enterTredmill() {
+	mode = "tredmill";
+	exercisePhase = false;
+}
+
+function enterGym() {
+	mode = "gym";
 }
 
 class Vector2 {
@@ -642,24 +768,24 @@ function moveTo(start, end, step) {
 // </SPRITES>
 
 // <MAP>
-// 000:e0f0e0f0e0f0e0f0e0f0e0f00a1a2a3a2a3aa8b82a3a4a5ae0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0ccdcccecfcdcecfcccecfcdc6e7e8e9eaebeccdccedecc6e7eaebedcccdc
-// 001:e1f1e1f1e1f1e1f1e1f1e1f10b1b2b3b2b3ba9b92b3b4b5be1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1cdddcdedfdddedfdcdedfddd6f7f8f9fafbfcdddcfdfcd6f7fafbfddcddd
-// 002:e0f0e0f0e0f0e0f0e0f0e0f00c1c2c3c2c3caaba2c3c4c5ce0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0ccdcc8d8c8d8c8d8c8d8c8d8c8d8c8d8c8d8c8d8c8d8c8d8c8d8c8d8ccdc
-// 003:e1f1e1f1e1f1e1f1e1f1e1f10d1d2d3d2d3dabbb2d3d4d5de1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1cdddc9d9c9d9c9d9c9d9c9d9c9d9c9d9c9d9c9d9c9d9c9d9c9d9c9d9cddd
-// 004:e0f0e0f0e0f0e0f0e0f0e0f00e1e2e3e2e3eacbc2e3e4e5ee0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0ccdcc8d8c8d8c8d8c8d8c8d8c8d8c8d8c8d8c8d8c8d8c8d8c8d8c8d8ccdc
-// 005:e1f1e1f1e1f1e1f1e1f1e1f10f1f2f3f2f3fadbd2f3f4f5fe1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1cdddc9d9c9d9c9d9c9d9c9d9c9d9c9d9c9d9c9d9c9d9c9d9c9d9c9d9cddd
-// 006:e0f0e0f0e0f0e0f0e060708090a0b060708090a0b060c6d690a0b0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0ccdcc8d8c8d8c8d8c8d8c8d8c8d8c8d8c8d8c8d8c8d8c8d8c8d8c8d8eefe
-// 007:e1f1e1f1e1f1e1f1e161718191a1b1c6d68191a1b161c7d791a1b1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1cdddc9d9c9d9c9d9c9d9c9d9c9d9c9d9c9d9c9d9c9d9c9d9c9d9c9d9efff
-// 008:e0f0e0f0e0f0e0f0e0627282889892c7d78292828898889892a2b2f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0cedec8d8c8d8c8d8c8d8c8d8c8d8c8d8c8d8c8d8c8d8c8d8c8d8c8d8ccdc
-// 009:e1f1e1f1e1f1e1f1e163738389999383938393838999899993a3b3f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1cfdfc9d9c9d9c9d9c9d9c9d9c9d9c9d9c9d9c9d9c9d9c9d9c9d9c9d9cddd
-// 010:e0f0e0f0e0f0e0f0e06474848a9a9484948494848a9a8a9a94a4b4f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0ccdcc8d8c8d8c8d8c8d8c8d8c8d8c8d8eafac8d8eafac8d8eafac8d8ccdc
-// 011:e1f1e1f1e1f1e1f1e16575858b9b9585958595858b9b8b9b95a5b5f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1cdddc9d9c9d9c9d9c9d9c9d9c9d9c9d9ebfbc9d9ebfbc9d9ebfbc9d9cddd
-// 012:e0f0e0f0e0f0e0f0e06676868c9c9686968696868c9c8c9c96a6b6f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0ccdcc8d8c8d8c8d8c8d8c8d8c8d8c8d8c8d8c8d8c8d8c8d8c8d8c8d8ccdc
-// 013:e1f1e1f1e1f1e1f1e16777878d9d9787978797878d9d8d9d97a7b7f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1cdddc9d9c9d9c9d9c9d9c9d9c9d9c9d9c9d9c9d9c9d9c9d9c9d9c9d9ccdc
-// 014:e0f0e0f0e000e4f430405000102030e4f40010203040500010e4f44050f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0ccdcc8d8c8d8c8d8c8d8c8d8c8d8c8d8c8d8c8d8c8d8c8d8c8d8c8d8cddd
-// 015:e1f1e1f1e101e5f53141e4f4112131e5f50111213141510111e5f54151f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1ccdcccdccceefedcccdcccdcccdcccdcccdcccdcccdcccdcccdcccdcccdc
-// 016:e0f0e0f0e00212222232e5f52232223222326878687868781222324252f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0cdddcdddcdefffddcdddcdddcdddcdddcdddcdddcdddcdddcdddcdddcddd
-// 017:f0f1e1f1e1031323233323332333233323336979697969791323334353f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0
+// 000:e0f0e0f0e0f0e0f0e0f0e0f00a1a2a3a2a3aa8b82a3a4a5ae0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0ccdcccecfcdccdddccecfcdc6e7e8e9eaebeccdccedecc6e7eaebedcccdce0f0e0e0f0e0f0f0e0e0f0e0f0e0f0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0
+// 001:e1f1e1f1e1f1e1f1e1f1e1f10b1b2b3b2b3ba9b92b3b4b5be1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1cdddcdedfdddedfdcdedfddd6f7f8f9fafbfcdddcfdfcd6f7fafbfddcddde1f1e1e1f1e1f1f1e1e1f1e1f1e1f1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1
+// 002:e0f0e0f0e0f0e0f0e0f0e0f00c1c2c3c2c3caaba2c3c4c5ce0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0ccdcc8d8c8d8c8d8c8d8c8d8c8d8c8d8c8d8c8d8c8d8c8d8c8d8c8d8ccdce0f0e0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0f0e0f0e0f0e0f0e0f0
+// 003:e1f1e1f1e1f1e1f1e1f1e1f10d1d2d3d2d3dabbb2d3d4d5de1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1cdddc9d9c9d9c9d9c9d9c9d9c9d9c9d9c9d9c9d9c9d9c9d9c9d9c9d9cddde1e0f0e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1f0e1f1e1f1e1f1e1f1
+// 004:f0f0e0f0e0f0e0f0e0f0e0f00e1e2e3e2e3eacbc2e3e4e5ee0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0ccdcc8d8c8d8c8d8c8d8c8d8c8d8c8d8c8d8c8d8c8d8cadac8d8c8d8ccdce0e1f1e1f1e1e0f0f1f0e1f1e1f1e1f1e1f1e1f1e1f1c8e0f0e0f0e0f0e0
+// 005:f1f1e1f1e1f1e1f1e1f1e1f10f1f2f3f2f3fadbd2f3f4f5fe1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1cdddc9d9c9d9c9d9c9d9c9d9c9d9c9d9c9d9c9d9c9d9cbdbc9d9c9d9cddde1e0f0e0e0f0e1f1f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e1f1e1
+// 006:f1f0e0f0e0f0e0f0e060708090a0b060708090a0b060c6d690a0b0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0ccdcc8d8c8d8cadac8d8c8d8c8d8c8d8c8d8c8d8c8d8c8d8c8d8c8d8eefee0e1e0f0e0f0e0e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1
+// 007:f0f1e1f1e1f1e1f1e161718191a1b1c6d68191a1b161c7d791a1b1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1cdddc9d9c9d9cbdbc9d9c9d9c9d9c9d9c9d9c9d9c9d9c9d9c9d9c9d9efffe1f1e1f1e1f1e1f1e1f1e1f1f0e0f0e0f0f0e0f0e0f0e0f0e0f0e0f0e0f0
+// 008:f1f0e0f0e0f0e0f0e0627282889892c7d78292828898889892a2b2f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0cedec8d8c8d8c8d8c8d8c8d8c8d8c8d8c8d8c8d8c8d8c8d8c8d8c8d8ccdce0f0e0f0e0f0e0e1f1e1f1e1f1e1f1e1f1f1e1f1e1f1e1f1e1f1e1f1e1f1
+// 009:e1f1e1f1e1f1e1f1e163738389999383938393838999899993a3b3f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1cfdfc9d9c9d9c9d9c9d9c9d9c9d9c9d9c9d9c9d9c9d9c9d9c9d9c9d9cddde1f1e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0
+// 010:e0f0e0f0e0f0e0f0e06474848a9a9484948494848a9a8a9a94a4b4f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0ccdcc8d8c8d8c8d8c8d8c8d8c8d8c8d8eafac8d8eafac8d8eafac8d8ccdce0f0e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1
+// 011:f0f1e1f1e1f1e1f1e16575858b9b9585958595858b9b8b9b95a5b5f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1cdddc9d9c9d9c9d9c9d9c9d9c9d9c9d9ebfbc9d9ebfbc9d9ebfbc9d9cddde1f1e0f0e0f0e0f0e0f0e0f0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0
+// 012:f1f0e0f0e0f0e0f0e06676868c9c9686968696868c9c8c9c96a6b6f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0ccdcc8d8c8d8c8d8c8d8cadac8d8c8d8c8d8c8d8c8d8c8d8c8d8c8d8ccdce0e0f0e0f0e0f0e0f0e0f0e0f0e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1
+// 013:f0f1e1f1e1f1e1f1e16777878d9d9787978797878d9d8d9d97a7b7f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1cdddc9d9c9d9c9d9c9d9cbdbc9d9c9d9c9d9c9d9c9d9c9d9c9d9c9d9ccdce1e1f1e1f1e1f1e1f1e1f1e1f1d9e0f0e0f0e0f0e0f0e0f0f0e0f0e0f0e0
+// 014:f1f0e0f0e000e4f430405000102030e4f40010203040500010e4f44050f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0ccdcc8d8c8d8c8d8c8d8c8d8c8d8c8d8c8d8c8d8c8d8c8d8c8d8c8d8cddde0f0e0f0e0f0e0f0e0f0e0f0e0f0e1f1e1f1e1f1e1f1e1f1f1e1f1e1f1e1
+// 015:e0f0e1f1e101e5f53141e4f4112131e5f50111213141510111e5f54151f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1ccdcccdccceefedcccdcccdcccdcccdcccdcccdcccdcccdcccdcccdcccdce0f0e1f1e1f1e1f1e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0
+// 016:e1f1e0f0e00212222232e5f52232223222326878687868781222324252f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0cdddcdddcdefffddcdddcdddcdddcdddcdddcdddcdddcdddcdddcdddcddde1f1f0f1f0e0f0e0e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1
+// 017:f0f1e1f1e1031323233323332333233323336979697969791323334353f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1e0f0e0f0e1f1e1f1e1f1e1f1e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0
 // 018:f1f0e0f0e0041424243424342434243424346a7a6a7a6a7a1424344454f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1
 // 019:e1f1e1f1e1051525253525352535253525356b7b6b7b6b7b1525354555f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1
 // 020:e0f0e0f0e0061626263626362636263626366c7c6c7c6c7c1626364656f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0
@@ -777,7 +903,7 @@ function moveTo(start, end, step) {
 // 132:e0f0e0f0e0f0e0f0e0f0e0e1f138485828384858190919e1f1f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0
 // 133:e1f1e1f1e1f1e1f1e1f1e1f1293949592939495909190818e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1
 // 134:e0f0e0f0e0f0e0f0e0f0e0f00818e6f60818081828380818e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0e0f0
-// 135:e1f1e1f1e1f1e1f1e1f1e1f10919e7f70919091929394959e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1
+// 135:e1f1e1f1e1f1e1f1e1f1e1f10919e7f70919091929394959e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1ccdce1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1e1f1
 // </MAP>
 
 // <WAVES>
@@ -814,7 +940,7 @@ function moveTo(start, end, step) {
 // </TRACKS>
 
 // <FLAGS>
-// 000:00000000000000000000000010101010000000000000000000000000101010100000000000000000000000001010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010100000000000000000000000000000000000000000000020204040606000000000000000000000202040406060000000001010101010102020404060600000000010101010101020204040606010101010101010101010202040406060101010101010101010101010101010100000000010101010101010101010101000000000
+// 000:00000000000000000000000010101010000000000000000000000000101010100000000000000000000000001010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010100000000000000000000000000000000000000000000020204040606000000000000000000000202040406060000008081010101010102020404060600000080810101010101020204040606010101414101010101010202040406060101000001010101010101010101010100000000010101010101010101010101000000000
 // </FLAGS>
 
 // <PALETTE>
