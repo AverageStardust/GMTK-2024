@@ -268,6 +268,13 @@ class Player {
 	moveUp() {
 		if (this.getNeighbourFlag(0, 0, 0) || this.getNeighbourFlag(1, 0, 0)) return;
 		this.position.y--;
+		if (this.position.y == 60) {
+			music(1, 0, 0, true);
+		} else if (this.position.y == 30) {
+			music(2, 0, 0, true);
+		} else if (this.position.y == 0) {
+			music(7, 0, 0, true);
+		}
 		this.lastMovedFrame = frame;
 		this.moveDirection = 0;
 	}
@@ -275,6 +282,11 @@ class Player {
 	moveDown() {
 		if (this.getNeighbourFlag(0, 2, 0) || this.getNeighbourFlag(1, 2, 0)) return;
 		this.position.y++;
+		if (this.position.y == 61) {
+			music(0, 0, 0, true);
+		} else if (this.position.y == 31) {
+			music(1, 0, 0, true);
+		}
 		this.lastMovedFrame = frame;
 		this.moveDirection = 1;
 	}
@@ -330,7 +342,7 @@ function teleportGym() {
 	player.setPosition(new Vector2(...GYM_SPAWN));
 	player.energy = player.strength;
 	enterGym();
-	music();
+	music(6, 0, 0, true);
 }
 
 function enterPullup() {
