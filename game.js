@@ -95,6 +95,7 @@ class Player {
 		let flip = false;
 		let drawArrow = false;
 		let arrowRotation = 0;
+		let movePhase = time() % 500 < 250;
 
 		if (mode === "pullup") {
 			id = exercisePhase ? 322 : 320;
@@ -106,28 +107,29 @@ class Player {
 			drawArrow = true;
 			arrowRotation = exercisePhase ? 1 : 3;
 		} else if (this.isMoving()) {
-			let movePhase = time() % 500 < 250;
-			if (this.climbing) {
-				id = 292;
+			switch (this.moveDirection) {
+				case 0:
+					id = 258;
+					flip = movePhase;
+					break;
+				case 1:
+					id = 260;
+					flip = movePhase;
+					break;
+				case 2:
+					id = movePhase ? 288 : 290;
+					flip = true;
+					break;
+				case 3:
+					id = movePhase ? 288 : 290;
+					break;
+			}
+		}
+
+		if (this.climbing) {
+			id = 292;
+			if (this.isMoving()) {
 				flip = movePhase;
-			} else {
-				switch (this.moveDirection) {
-					case 0:
-						id = 258;
-						flip = movePhase;
-						break;
-					case 1:
-						id = 260;
-						flip = movePhase;
-						break;
-					case 2:
-						id = movePhase ? 288 : 290;
-						flip = true;
-						break;
-					case 3:
-						id = movePhase ? 288 : 290;
-						break;
-				}
 			}
 		}
 
@@ -141,7 +143,6 @@ class Player {
 	}
 
 	control() {
-		this.climbing = false;
 		if (mode === "pullup") {
 			if (!this.isMoving()) {
 				if ((btn(2) || btn(3))) {
@@ -205,13 +206,17 @@ class Player {
 				this.getNeighbourEnergyCost(0, 1),
 				this.getNeighbourEnergyCost(1, 1));
 
-			this.energy -= energyCost * 0.1;
-			if (btn(0) && !btn(1)) {
-				this.motivation += energyCost * (1 - this.position.y / 180) * 0.1;
+			if (energyCost > 0.0) {
+				this.energy -= energyCost * 0.1;
 				this.climbing = true;
-			}
-			if (this.energy < 0.0) {
-				teleportGym();
+				if (btn(0) && !btn(1)) {
+					this.motivation += energyCost * (1 - this.position.y / 220) * 0.12;
+				}
+				if (this.energy < 0.0) {
+					teleportGym();
+				}
+			} else {
+				this.climbing = false;
 			}
 		}
 	}
@@ -277,6 +282,7 @@ class Player {
 		}
 		this.lastMovedFrame = frame;
 		this.moveDirection = 0;
+		sfx(60, -1, 3);
 	}
 
 	moveDown() {
@@ -289,6 +295,7 @@ class Player {
 		}
 		this.lastMovedFrame = frame;
 		this.moveDirection = 1;
+		sfx(60, -1, 3);
 	}
 
 	moveLeft() {
@@ -296,6 +303,7 @@ class Player {
 		this.position.x--;
 		this.lastMovedFrame = frame;
 		this.moveDirection = 2;
+		sfx(60, -1, 3);
 	}
 
 	moveRight() {
@@ -303,6 +311,7 @@ class Player {
 		this.position.x++;
 		this.lastMovedFrame = frame;
 		this.moveDirection = 3;
+		sfx(60, -1, 3);
 	}
 
 	isMoving() {
